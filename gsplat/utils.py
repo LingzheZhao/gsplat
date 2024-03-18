@@ -2,9 +2,9 @@
 
 from typing import Tuple
 
+import torch
 from jaxtyping import Float, Int
 from torch import Tensor
-import torch
 
 import gsplat.cuda as _C
 
@@ -17,6 +17,7 @@ def map_gaussian_to_intersects(
     radii: Float[Tensor, "batch 1"],
     cum_tiles_hit: Float[Tensor, "batch 1"],
     tile_bounds: Tuple[int, int, int],
+    block_size: int,
 ) -> Tuple[Float[Tensor, "cum_tiles_hit 1"], Float[Tensor, "cum_tiles_hit 1"]]:
     """Map each gaussian intersection to a unique tile ID and depth value for sorting.
 
@@ -46,12 +47,15 @@ def map_gaussian_to_intersects(
         radii.contiguous(),
         cum_tiles_hit.contiguous(),
         tile_bounds,
+        block_size,
     )
     return (isect_ids, gaussian_ids)
 
 
 def get_tile_bin_edges(
-    num_intersects: int, isect_ids_sorted: Int[Tensor, "num_intersects 1"]
+    num_intersects: int,
+    isect_ids_sorted: Int[Tensor, "num_intersects 1"],
+    tile_bounds: Tuple[int, int, int],
 ) -> Int[Tensor, "num_intersects 2"]:
     """Map sorted intersection IDs to tile bins which give the range of unique gaussian IDs belonging to each tile.
 
@@ -65,13 +69,16 @@ def get_tile_bin_edges(
     Args:
         num_intersects (int): total number of gaussian intersects.
         isect_ids_sorted (Tensor): sorted unique IDs for each gaussian in the form (tile | depth id).
+        tile_bounds (Tuple): tile dimensions as a len 3 tuple (tiles.x , tiles.y, 1).
 
     Returns:
         A Tensor:
 
         - **tile_bins** (Tensor): range of gaussians IDs hit per tile.
     """
-    return _C.get_tile_bin_edges(num_intersects, isect_ids_sorted.contiguous())
+    return _C.get_tile_bin_edges(
+        num_intersects, isect_ids_sorted.contiguous(), tile_bounds
+    )
 
 
 def compute_cov2d_bounds(
@@ -126,6 +133,7 @@ def bin_and_sort_gaussians(
     radii: Float[Tensor, "batch 1"],
     cum_tiles_hit: Float[Tensor, "batch 1"],
     tile_bounds: Tuple[int, int, int],
+    block_size: int,
 ) -> Tuple[
     Float[Tensor, "num_intersects 1"],
     Float[Tensor, "num_intersects 1"],
@@ -159,9 +167,16 @@ def bin_and_sort_gaussians(
         - **tile_bins** (Tensor): range of gaussians hit per tile.
     """
     isect_ids, gaussian_ids = map_gaussian_to_intersects(
-        num_points, num_intersects, xys, depths, radii, cum_tiles_hit, tile_bounds
+        num_points,
+        num_intersects,
+        xys,
+        depths,
+        radii,
+        cum_tiles_hit,
+        tile_bounds,
+        block_size,
     )
     isect_ids_sorted, sorted_indices = torch.sort(isect_ids)
     gaussian_ids_sorted = torch.gather(gaussian_ids, 0, sorted_indices)
-    tile_bins = get_tile_bin_edges(num_intersects, isect_ids_sorted)
+    tile_bins = get_tile_bin_edges(num_intersects, isect_ids_sorted, tile_bounds)
     return isect_ids, gaussian_ids, isect_ids_sorted, gaussian_ids_sorted, tile_bins

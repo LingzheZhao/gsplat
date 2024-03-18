@@ -5,6 +5,7 @@
 #include <math.h>
 #include <torch/extension.h>
 #include <tuple>
+#include <c10/cuda/CUDAGuard.h>
 
 #define CHECK_CUDA(x) TORCH_CHECK(x.is_cuda(), #x " must be a CUDA tensor")
 #define CHECK_CONTIGUOUS(x)                                                    \
@@ -12,6 +13,8 @@
 #define CHECK_INPUT(x)                                                         \
     CHECK_CUDA(x);                                                             \
     CHECK_CONTIGUOUS(x)
+#define DEVICE_GUARD(_ten) \
+    const at::cuda::OptionalCUDAGuard device_guard(device_of(_ten));
 
 std::tuple<
     torch::Tensor, // output conics
@@ -40,6 +43,7 @@ std::tuple<
     torch::Tensor,
     torch::Tensor,
     torch::Tensor,
+    torch::Tensor,
     torch::Tensor>
 project_gaussians_forward_tensor(
     const int num_points,
@@ -48,14 +52,13 @@ project_gaussians_forward_tensor(
     const float glob_scale,
     torch::Tensor &quats,
     torch::Tensor &viewmat,
-    torch::Tensor &projmat,
     const float fx,
     const float fy,
     const float cx,
     const float cy,
     const unsigned img_height,
     const unsigned img_width,
-    const std::tuple<int, int, int> tile_bounds,
+    const unsigned block_width,
     const float clip_thresh
 );
 
@@ -72,7 +75,6 @@ project_gaussians_backward_tensor(
     const float glob_scale,
     torch::Tensor &quats,
     torch::Tensor &viewmat,
-    torch::Tensor &projmat,
     const float fx,
     const float fy,
     const float cx,
@@ -82,9 +84,11 @@ project_gaussians_backward_tensor(
     torch::Tensor &cov3d,
     torch::Tensor &radii,
     torch::Tensor &conics,
+    torch::Tensor &compensation,
     torch::Tensor &v_xy,
     torch::Tensor &v_depth,
-    torch::Tensor &v_conic
+    torch::Tensor &v_conic,
+    torch::Tensor &v_compensation
 );
 
 
@@ -95,12 +99,14 @@ std::tuple<torch::Tensor, torch::Tensor> map_gaussian_to_intersects_tensor(
     const torch::Tensor &depths,
     const torch::Tensor &radii,
     const torch::Tensor &cum_tiles_hit,
-    const std::tuple<int, int, int> tile_bounds
+    const std::tuple<int, int, int> tile_bounds,
+    const unsigned block_width
 );
 
 torch::Tensor get_tile_bin_edges_tensor(
     int num_intersects,
-    const torch::Tensor &isect_ids_sorted
+    const torch::Tensor &isect_ids_sorted,
+    const std::tuple<int, int, int> tile_bounds
 );
 
 std::tuple<
@@ -148,6 +154,7 @@ std::
     nd_rasterize_backward_tensor(
         const unsigned img_height,
         const unsigned img_width,
+        const unsigned block_width,
         const torch::Tensor &gaussians_ids_sorted,
         const torch::Tensor &tile_bins,
         const torch::Tensor &xys,
@@ -171,6 +178,7 @@ std::
     rasterize_backward_tensor(
         const unsigned img_height,
         const unsigned img_width,
+        const unsigned block_width,
         const torch::Tensor &gaussians_ids_sorted,
         const torch::Tensor &tile_bins,
         const torch::Tensor &xys,
