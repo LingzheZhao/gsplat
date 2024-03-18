@@ -60,9 +60,6 @@ def test_project_gaussians_forward():
         ],
         device=device,
     )
-    viewmat[:3, :3] = _torch_impl.quat_to_rotmat(torch.randn(4))
-    projmat = projection_matrix(fx, fy, W, H)
-    fullmat = projmat @ viewmat
     BLOCK_SIZE = 16
 
     (
@@ -79,7 +76,7 @@ def test_project_gaussians_forward():
         glob_scale,
         quats,
         viewmat,
-        fullmat,
+        None, # deprecated projmat/fullmat
         fx,
         fy,
         cx,
@@ -108,7 +105,6 @@ def test_project_gaussians_forward():
             glob_scale,
             quats,
             viewmat,
-            fullmat,
             (fx, fy, cx, cy),
             (W, H),
             BLOCK_SIZE,
@@ -150,9 +146,6 @@ def test_project_gaussians_backward():
         ],
         device=device,
     )
-    viewmat[:3, :3] = _torch_impl.quat_to_rotmat(torch.randn(4))
-    projmat = projection_matrix(fx, fy, W, H)
-    fullmat = projmat @ viewmat
 
     BLOCK_SIZE = 16
 
@@ -172,7 +165,6 @@ def test_project_gaussians_backward():
         glob_scale,
         quats,
         viewmat,
-        fullmat,
         (fx, fy, cx, cy),
         (W, H),
         BLOCK_SIZE,
@@ -193,7 +185,6 @@ def test_project_gaussians_backward():
         glob_scale,
         quats,
         viewmat,
-        fullmat,
         fx,
         fy,
         cx,
@@ -261,7 +252,7 @@ def test_project_gaussians_backward():
         """
         mean3d (*, 3) -> xy (*, 2)
         """
-        return _torch_impl.project_pix(fullmat, mean3d, (W, H), (cx, cy))
+        return _torch_impl.project_pix((fx, fy), mean3d, (cx, cy))
 
     def compute_depth_partial(mean3d):
         """
@@ -271,11 +262,13 @@ def test_project_gaussians_backward():
         depth = p_view[..., 2]
         return depth
 
+    p_view = _torch_impl.clip_near_plane(means3d, viewmat, clip_thresh)[0]
+
     _, vjp_scale_rot_to_cov3d = vjp(scale_rot_to_cov3d_partial, scales, quats)  # type: ignore
     _, vjp_project_cov3d_ewa = vjp(project_cov3d_ewa_partial, means3d, cov3d)  # type: ignore
     _, vjp_compute_cov2d_bounds = vjp(compute_cov2d_bounds_partial, cov2d)  # type: ignore
+    _, vjp_project_pix = vjp(project_pix_partial, p_view)  # type: ignore
     _, vjp_compute_compensation = vjp(compute_compensation_partial, cov2d)  # type: ignore
-    _, vjp_project_pix = vjp(project_pix_partial, means3d)  # type: ignore
     _, vjp_compute_depth = vjp(compute_depth_partial, means3d)  # type: ignore
 
     _v_cov2d = vjp_compute_cov2d_bounds(v_conics)[0]
