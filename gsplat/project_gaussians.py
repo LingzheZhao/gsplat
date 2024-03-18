@@ -199,35 +199,40 @@ class _ProjectGaussians(Function):
         if viewmat.requires_grad:
             v_viewmat = torch.zeros_like(viewmat)
             R = viewmat[..., :3, :3]
+            t = viewmat[..., :3, 3]
 
-            # Denote ProjectGaussians for a single Gaussian (mean3d, q, s)
-            # viemwat = [R, t] as:
-            #
-            #   f(mean3d, q, s, R, t, intrinsics)
-            #       = g(R @ mean3d + t,
-            #           R @ cov3d_world(q, s) @ R^T ))
-            #
-            # Then, the Jacobian w.r.t., t is:
-            #
-            #   d f / d t = df / d mean3d @ R^T
-            #
-            # and, in the context of fine tuning camera poses, it is reasonable
-            # to assume that
-            #
-            #   d f / d R_ij =~ \sum_l d f / d t_l * d (R @ mean3d)_l / d R_ij
-            #                = d f / d_t_i * mean3d[j]
-            #
-            # Gradients for R and t can then be obtained by summing over
-            # all the Gaussians.
+            # Denote:
+            #  - viewmat = [R, t]
+            #  - mean3d_cam: mean3d in camera space
+            # We have:
+            # $$mean3d_cam = R @ means3d + t$$
+            # $$\frac{\partial mean3d_cam}{\partial means3d} = R$$
+            # Thus Jacobian of means3d w.r.t. mean3d_cam is $R^T$.
+            # Now we have the gradient of mean3d_cam:
             v_mean3d_cam = torch.matmul(v_mean3d, R.transpose(-1, -2))
 
+            # Jacobian of mean3d_cam w.r.t. viewmat is:
+            # $$I(3) \otimes [means3d^T 1]$$
+            # where $\otimes$ is the Kronecker product.
+            # We have the naive implementation below:
+
+            # means3d_hom = torch.cat([means3d, torch.ones_like(means3d[..., :1]], dim=-1)  # N, 4
+            # means3d_hom_T = means3d_hom.unsqueeze(-2)  # N, 1, 4
+            # v_pose_cam = torch.kron(
+            #     torch.eye(3, device=means3d.device), means3d_hom_T
+            # ).view(-1, 3, 12)  # N, 3, 12
+            # v_viewmat_ = v_mean3d_cam.unsqueeze(-2) @ v_pose_cam  # N, 1, 12
+            # v_viewmat = v_viewmat_.sum(0).view(3, 4)
+
+            # We can expand and simplify the above code block as follows:
             # gradient w.r.t. view matrix translation
             v_viewmat[..., :3, 3] = v_mean3d_cam.sum(-2)
-
             # gradent w.r.t. view matrix rotation
-            for j in range(3):
-                for l in range(3):
-                    v_viewmat[..., j, l] = torch.dot(v_mean3d_cam[..., j], means3d[..., l])
+            v_viewmat[..., :3, :3] = torch.matmul(
+                v_mean3d_cam.unsqueeze(-1),
+                means3d.unsqueeze(-2)
+            ).sum(-3)
+
         else:
             v_viewmat = None
 
