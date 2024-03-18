@@ -2,6 +2,7 @@
 
 from typing import Optional, Tuple
 
+import torch
 from jaxtyping import Float
 from torch import Tensor
 from torch.autograd import Function
@@ -195,6 +196,46 @@ class _ProjectGaussians(Function):
             v_compensation,
         )
 
+        if viewmat.requires_grad:
+            v_viewmat = torch.zeros_like(viewmat)
+            R = viewmat[..., :3, :3]
+            t = viewmat[..., :3, 3]
+
+            # Denote:
+            #  - viewmat = [R, t]
+            #  - mean3d_cam: mean3d in camera space
+            # We have:
+            # $$mean3d_cam = R @ means3d + t$$
+            # $$\frac{\partial mean3d_cam}{\partial means3d} = R$$
+            # Thus Jacobian of means3d w.r.t. mean3d_cam is $R^T$.
+            # Now we have the gradient of mean3d_cam:
+            v_mean3d_cam = torch.matmul(v_mean3d, R.transpose(-1, -2))
+
+            # Jacobian of mean3d_cam w.r.t. viewmat is:
+            # $$I(3) \otimes [means3d^T 1]$$
+            # where $\otimes$ is the Kronecker product.
+            # We have the naive implementation below:
+
+            # means3d_hom = torch.cat([means3d, torch.ones_like(means3d[..., :1]], dim=-1)  # N, 4
+            # means3d_hom_T = means3d_hom.unsqueeze(-2)  # N, 1, 4
+            # v_pose_cam = torch.kron(
+            #     torch.eye(3, device=means3d.device), means3d_hom_T
+            # ).view(-1, 3, 12)  # N, 3, 12
+            # v_viewmat_ = v_mean3d_cam.unsqueeze(-2) @ v_pose_cam  # N, 1, 12
+            # v_viewmat = v_viewmat_.sum(0).view(3, 4)
+
+            # We can expand and simplify the above code block as follows:
+            # gradient w.r.t. view matrix translation
+            v_viewmat[..., :3, 3] = v_mean3d_cam.sum(-2)
+            # gradent w.r.t. view matrix rotation
+            v_viewmat[..., :3, :3] = torch.matmul(
+                v_mean3d_cam.unsqueeze(-1),
+                means3d.unsqueeze(-2)
+            ).sum(-3)
+
+        else:
+            v_viewmat = None
+
         # Return a gradient for each input.
         return (
             # means3d: Float[Tensor, "*batch 3"],
@@ -206,7 +247,7 @@ class _ProjectGaussians(Function):
             # quats: Float[Tensor, "*batch 4"],
             v_quat,
             # viewmat: Float[Tensor, "4 4"],
-            None,
+            v_viewmat,
             # projmat: Float[Tensor, "4 4"],
             None,
             # fx: float,
