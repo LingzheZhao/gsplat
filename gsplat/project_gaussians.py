@@ -224,11 +224,11 @@ class _ProjectGaussians(Function):
             # v_viewmat_ = v_mean3d_cam.unsqueeze(-2) @ v_pose_cam  # N, 1, 12
             # v_viewmat = v_viewmat_.sum(0).view(3, 4)
 
-            # We can expand and simplify the above code block as follows:
+            # We can simplify the above code block as follows:
             # gradient w.r.t. view matrix translation
             v_viewmat[..., :3, 3] = v_mean3d_cam.sum(-2)
             # gradent w.r.t. view matrix rotation
-            v_viewmat[..., :3, :3] = torch.matmul(
+            v_viewmat[..., :3, :3] = torch.bmm(
                 v_mean3d_cam.unsqueeze(-1),
                 means3d.unsqueeze(-2)
             ).sum(-3)
