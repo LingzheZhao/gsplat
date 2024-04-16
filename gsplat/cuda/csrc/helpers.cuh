@@ -103,6 +103,16 @@ inline __device__ void cov2d_to_compensation_vjp(
     v_cov2d.z += v_sqr_comp * (one_minus_sqr_comp * conic.z - 0.3 * inv_det);
 }
 
+// helper for applying R^T * p for a ROW MAJOR 4x3 matrix [R, t], ignoring t
+inline __device__ float3 transform_4x3_rot_only_transposed(const float *mat, const float3 p) {
+    float3 out = {
+        mat[0] * p.x + mat[4] * p.y + mat[8] * p.z,
+        mat[1] * p.x + mat[5] * p.y + mat[9] * p.z,
+        mat[2] * p.x + mat[6] * p.y + mat[10] * p.z,
+    };
+    return out;
+}
+
 // helper for applying R * p + T, expect mat to be ROW MAJOR
 inline __device__ float3 transform_4x3(const float *mat, const float3 p) {
     float3 out = {
@@ -130,8 +140,6 @@ inline __device__ float2 project_pix(
 ) {
     float rw = 1.f / (p_view.z + 1e-6f);
     float2 p_proj = { p_view.x * rw, p_view.y * rw };
-    // TODO: check if +-0.5 should be added to pix coords or not
-    // this depends on rasterize
     float2 p_pix = { p_proj.x * fxfy.x + pp.x, p_proj.y * fxfy.y + pp.y };
     return p_pix;
 }

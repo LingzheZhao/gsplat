@@ -60,6 +60,7 @@ def test_project_gaussians_forward():
         ],
         device=device,
     )
+    viewmat[:3, :3] = _torch_impl.quat_to_rotmat(torch.randn(4))
     BLOCK_SIZE = 16
 
     (
@@ -76,7 +77,6 @@ def test_project_gaussians_forward():
         glob_scale,
         quats,
         viewmat,
-        None, # deprecated projmat/fullmat
         fx,
         fy,
         cx,
@@ -146,6 +146,7 @@ def test_project_gaussians_backward():
         ],
         device=device,
     )
+    viewmat[:3, :3] = _torch_impl.quat_to_rotmat(torch.randn(4))
 
     BLOCK_SIZE = 16
 
@@ -252,7 +253,8 @@ def test_project_gaussians_backward():
         """
         mean3d (*, 3) -> xy (*, 2)
         """
-        return _torch_impl.project_pix((fx, fy), mean3d, (cx, cy))
+        p_view, _ = _torch_impl.clip_near_plane(mean3d, viewmat, clip_thresh)
+        return _torch_impl.project_pix((fx, fy), p_view, (cx, cy))
 
     def compute_depth_partial(mean3d):
         """
