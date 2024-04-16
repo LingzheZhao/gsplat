@@ -215,10 +215,10 @@ class _ProjectGaussians(Function):
 
             # means3d_hom = torch.cat([means3d, torch.ones_like(means3d[..., :1]], dim=-1)  # N, 4
             # means3d_hom_T = means3d_hom.unsqueeze(-2)  # N, 1, 4
-            # v_pose_cam = torch.kron(
+            # v_mean3d_cam_wrt_viewmat = torch.kron(
             #     torch.eye(3, device=means3d.device), means3d_hom_T
             # ).view(-1, 3, 12)  # N, 3, 12
-            # v_viewmat_ = v_mean3d_cam.unsqueeze(-2) @ v_pose_cam  # N, 1, 12
+            # v_viewmat_ = v_mean3d_cam.unsqueeze(-2) @ v_mean3d_cam_wrt_viewmat  # N, 1, 12
             # v_viewmat = v_viewmat_.sum(0).view(3, 4)
 
             # We can simplify the above code block as follows:
