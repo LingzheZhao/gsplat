@@ -78,16 +78,6 @@ inline __device__ void cov2d_to_conic_vjp(
     v_cov2d.z = v_Sigma[1][1];
 }
 
-// helper for applying R^T * p for a ROW MAJOR 4x3 matrix [R, t], ignoring t
-inline __device__ float3 transform_4x3_rot_only_transposed(const float *mat, const float3 p) {
-    float3 out = {
-        mat[0] * p.x + mat[4] * p.y + mat[8] * p.z,
-        mat[1] * p.x + mat[5] * p.y + mat[9] * p.z,
-        mat[2] * p.x + mat[6] * p.y + mat[10] * p.z,
-    };
-    return out;
-}
-
 inline __device__ void cov2d_to_compensation_vjp(
     const float compensation, const float3 &conic, const float v_compensation, float3 &v_cov2d
 ) {
